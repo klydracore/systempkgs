@@ -1,0 +1,48 @@
+name: Build Kernel SCB Container
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-latest
+
+    env:
+      KERNEL_VERSION: "6.8.2"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: GHCR Login
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+             docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Build kernel builder image
+        run: |
+          docker build \
+            -t kernel-builder \
+            packages/@linux/kernel
+
+      - name: Run builder (produce .scb + image tar)
+        run: |
+          mkdir -p out
+          docker run --rm \
+            -e KERNEL_VERSION=${{ env.KERNEL_VERSION }} \
+            -v $PWD/out:/out \
+            kernel-builder
+
+      - name: Load runtime image
+        run: docker load -i out/kernel-scb-${{ env.KERNEL_VERSION }}.tar
+
+      - name: Tag and Push to GHCR
+        run: |
+          IMAGE="ghcr.io/${{ github.repository_owner }}/systempkgs/@linux/kernel:${{ env.KERNEL_VERSION }}"
+          docker tag kernel-scb:${{ env.KERNEL_VERSION }} "$IMAGE"
+          docker push "$IMAGE"
+
+      - name: Upload SCB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-scb
+          path: out/main.scb
