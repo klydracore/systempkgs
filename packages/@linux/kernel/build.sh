@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KERNEL_VERSION="${KERNEL_VERSION:-6.8.2}"
+KERNEL_VERSION="${KERNEL_VERSION:-6.17.8}"
 PKG_NAME="linux-base"
 SCB_NAME="main.scb"
 
