@@ -9,7 +9,6 @@ SCDF="$ROOT/package.scdf"
 mkdir -p "$OUTPUT"
 mkdir -p "$SRC"
 
-apt-get install -y git
 # Install missing tools if running inside Docker
 if ! command -v depmod >/dev/null 2>&1; then
     echo "Installing kmod (for depmod)..."
