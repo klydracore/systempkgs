@@ -1,65 +1,59 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -e
 
-KERNEL_VERSION="${KERNEL_VERSION:-6.17.8}"
-PKG_NAME="linux-base"
-SCB_NAME="main.scb"
+ROOT=$(pwd)
+OUTPUT="$ROOT/output"
+SRC="$ROOT/src"
+SCDF="$ROOT/package.scdf"
 
-REPO_ROOT="/packages/@linux/kernel"
-OUTPUT_DIR="/out"
-BUILD_DIR="/build"
+mkdir -p "$OUTPUT"
+mkdir -p "$SRC"
 
-mkdir -p "$OUTPUT_DIR" "$BUILD_DIR/staging/kernel" "$BUILD_DIR/pkg"
+# Install missing tools if running inside Docker
+if ! command -v depmod >/dev/null 2>&1; then
+    echo "Installing kmod (for depmod)..."
+    apt-get update
+    apt-get install -y kmod
+fi
 
-echo "=== Download Linux kernel $KERNEL_VERSION ==="
-cd "$BUILD_DIR"
-wget -O linux.tar.xz "https://www.kernel.org/pub/linux/kernel/v${KERNEL_VERSION%%.*}.x/linux-${KERNEL_VERSION}.tar.xz"
-tar -xf linux.tar.xz
-cd "linux-${KERNEL_VERSION}"
+# Clone or update Linux source
+if [ ! -d "$SRC/linux" ]; then
+    git clone --depth=1 https://github.com/torvalds/linux.git "$SRC/linux"
+else
+    git -C "$SRC/linux" pull
+fi
 
-echo "=== Building kernel (threads: $(nproc)) ==="
+cd "$SRC/linux"
+
+# Kernel config
 make defconfig
-make -j"$(nproc)" bzImage modules
-make modules_install INSTALL_MOD_PATH="$BUILD_DIR/staging/kernel"
 
-cp arch/*/boot/bzImage "$BUILD_DIR/staging/kernel/vmlinuz-${KERNEL_VERSION}"
-cp System.map "$BUILD_DIR/staging/kernel/System.map-${KERNEL_VERSION}"
-cp .config "$BUILD_DIR/staging/kernel/config-${KERNEL_VERSION}"
+# Build kernel
+make -j"$(nproc)"
 
-echo "=== Generating package.scdf ==="
-cat > "$BUILD_DIR/pkg/package.scdf" <<EOF
-name: ${PKG_NAME}
-version: ${KERNEL_VERSION}
-type: kernel
-dependencies: []
-install:
-  - cp -a kernel/* /usr/
-EOF
+# Extract kernel version
+VERSION=$(make kernelrelease)
 
-echo "=== Creating kernel.tar.xz payload ==="
-cd "$BUILD_DIR/staging"
-tar -cJf "$BUILD_DIR/pkg/kernel.tar.xz" kernel
+echo "Kernel version: $VERSION"
 
-echo "=== Creating SCB: ${SCB_NAME} ==="
-cd "$BUILD_DIR/pkg"
-tar -cJf "$OUTPUT_DIR/${SCB_NAME}" package.scdf kernel.tar.xz
+# Install modules into staging dir
+STAGING="$ROOT/pkgroot"
+mkdir -p "$STAGING"
 
-echo "=== Preparing runtime container ==="
-RUNTIME_DIR="$BUILD_DIR/runtime"
-mkdir -p "$RUNTIME_DIR/packages/@linux/kernel"
-cp "$OUTPUT_DIR/${SCB_NAME}" "$RUNTIME_DIR/packages/@linux/kernel/${SCB_NAME}"
+make INSTALL_MOD_PATH="$STAGING/kernel" modules_install
 
-cat > "$RUNTIME_DIR/Dockerfile" <<EOF
-FROM scratch
-ADD packages/@linux/kernel/main.scb /packages/@linux/kernel/main.scb
-EOF
+# Copy bzImage
+mkdir -p "$STAGING/kernel/boot"
+cp "arch/x86/boot/bzImage" "$STAGING/kernel/boot/vmlinuz-$VERSION"
 
-echo "=== Building runtime container image ==="
-cd "$RUNTIME_DIR"
-docker build -t kernel-scb:${KERNEL_VERSION} .
+# Add package metadata
+cp "$SCDF" "$STAGING/package.scdf"
 
-echo "=== Saving image tar ==="
-docker save kernel-scb:${KERNEL_VERSION} \
-    -o "$OUTPUT_DIR/kernel-scb-${KERNEL_VERSION}.tar"
+# Create SCB tarball
+mkdir -p "$OUTPUT"
+tar -cJf "$OUTPUT/main.scb" -C "$STAGING" .
 
-echo "=== DONE ==="
+# Clean
+rm -rf "$STAGING"
+
+echo "main.scb built successfully"
