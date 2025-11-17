@@ -37,7 +37,7 @@ jobs:
 
       - name: Tag and Push to GHCR
         run: |
-          IMAGE="ghcr.io/${{ github.repository_owner }}/main/@linux/kernel:${{ env.KERNEL_VERSION }}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/main/kernel:${{ env.KERNEL_VERSION }}"
           docker tag kernel-scb:${{ env.KERNEL_VERSION }} "$IMAGE"
           docker push "$IMAGE"
 
