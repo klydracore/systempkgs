@@ -22,7 +22,7 @@ jobs:
         run: |
           docker build \
             -t kernel-builder \
-            packages/@linux/kernel
+            packages/kernel
 
       - name: Run builder (produce .scb + image tar)
         run: |
